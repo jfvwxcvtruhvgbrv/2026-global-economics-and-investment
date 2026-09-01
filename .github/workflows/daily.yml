@@ -1,1 +1,55 @@
+name: 경제·투자 인사이트 아카이브 생성 및 배포
 
+on:
+  schedule:
+    - cron: "13 21 * * *"   # 매일 UTC 21:13 = 한국시간 06:13 (아침 세션)
+    - cron: "13 9 * * *"    # 매일 UTC 09:13 = 한국시간 18:13 (저녁 세션)
+  workflow_dispatch:        # 수동 실행 버튼도 사용 가능
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+
+      - name: 파이썬 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 의존성 설치
+        run: pip install -r requirements.txt
+
+      - name: 파이프라인 실행 (수집 → 시세데이터 → 분류/요약 → 사이트 생성)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # FRED_API_KEY는 선택사항입니다. 등록하지 않아도 워크플로우는
+          # 정상 실행되며, 주식/채권/원자재 차트만 조용히 빠집니다.
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+        run: python3 run_pipeline.py
+
+      - name: 생성된 아카이브(JSON) 커밋
+        run: |
+          git config user.name "econ-invest-intel-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add archive/
+          git diff --quiet && git diff --staged --quiet || git commit -m "세션 아카이브 자동 업데이트 $(date -u +%F)"
+          git push
+
+      - name: GitHub Pages 아티팩트 업로드
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: GitHub Pages 배포
+        uses: actions/deploy-pages@v4
