@@ -293,11 +293,17 @@ TV_BASE_CFG = {
 }
 
 # (자산군, TradingView 심볼, 한글 라벨) — index.html에만 노출되는
-# 실시간 미니 시세 12종. 자산군 5개 축을 모두 커버한다.
+# 실시간 미니 시세 16종. 자산군 5개 축을 모두 커버한다. (기존 12종에서
+# 나스닥100/다우존스/항셍/중국 ETF를 추가해 "주요 지수" 커버리지를
+# 사용자가 참고로 준 옛 대시보드 수준까지 넓혔다.)
 TV_MINI_SYMBOLS = [
     ("주식",      "FOREXCOM:SPXUSD", "S&P 500"),
+    ("주식",      "FOREXCOM:NSXUSD", "나스닥 100"),
+    ("주식",      "FOREXCOM:DJI",    "다우존스"),
     ("주식",      "INDEX:NKY",       "닛케이 225"),
     ("주식",      "CAPITALCOM:DE40", "DAX"),
+    ("주식",      "TVC:HSI",         "항셍지수"),
+    ("주식",      "NASDAQ:MCHI",     "중국 ETF"),
     ("주식",      "AMEX:EWY",        "MSCI 한국 ETF"),
     ("채권·금리", "TVC:US10Y",       "미 10년물 금리"),
     ("채권·금리", "AMEX:TLT",        "20년 국채 ETF"),
@@ -332,81 +338,138 @@ def render_tv_mini_grid() -> str:
     return f'<div class="tv-mini-grid">{"".join(cells)}</div>'
 
 
-# TradingView market-overview(탭형) 위젯 — 자산군별 탭 4개.
-# 옛 개인 대시보드의 loadWorldRight() 구성을 그대로 이어받았다.
-TV_MARKET_OVERVIEW_TABS = [
-    {
-        "title": "주요 지수",
-        "symbols": [
-            {"s": "FOREXCOM:SPXUSD", "d": "S&P 500"},
-            {"s": "FOREXCOM:DJI", "d": "다우존스"},
-            {"s": "NASDAQ:NDX", "d": "나스닥 100"},
-            {"s": "INDEX:NKY", "d": "닛케이 225"},
-            {"s": "CAPITALCOM:DE40", "d": "DAX"},
-            {"s": "KRX:KOSPI", "d": "코스피"},
-        ],
-    },
-    {
-        "title": "선물·원자재",
-        "symbols": [
-            {"s": "TVC:GOLD", "d": "금"},
-            {"s": "TVC:SILVER", "d": "은"},
-            {"s": "TVC:USOIL", "d": "WTI 원유"},
-            {"s": "TVC:UKOIL", "d": "브렌트유"},
-            {"s": "CBOT:ZC1!", "d": "옥수수 선물"},
-        ],
-    },
-    {
-        "title": "외환·통화",
-        "symbols": [
-            {"s": "FX:EURUSD", "d": "유로/달러"},
-            {"s": "FX:USDJPY", "d": "달러/엔"},
-            {"s": "FX:USDKRW", "d": "달러/원"},
-            {"s": "FX:GBPUSD", "d": "파운드/달러"},
-            {"s": "TVC:DXY", "d": "달러 인덱스"},
-        ],
-    },
-    {
-        "title": "ETF",
-        "symbols": [
-            {"s": "AMEX:SPY", "d": "S&P500 ETF"},
-            {"s": "AMEX:QQQ", "d": "나스닥 ETF"},
-            {"s": "AMEX:TLT", "d": "20년 국채 ETF"},
-            {"s": "AMEX:GLD", "d": "금 ETF"},
-            {"s": "AMEX:EWY", "d": "한국 ETF"},
-        ],
-    },
-]
+# "주요 지수 / 선물·원자재 / ETF" 탭(고정 market-overview 위젯)은
+# 없앴다 — 이 세 자산군은 TradingView 무료 위젯 중 실시간 순위가
+# 바뀌는 스크리너를 공식 지원하지 않아서, 확실히 동적인 것만
+# (미니 그리드의 실시간 시세 16종 + 아래 외환/암호자산 스크리너)
+# 남기기로 사용자와 합의했다.
 
 
-def render_tv_market_overview() -> str:
-    """TradingView market-overview(탭형) 위젯 하나를 index.html에 심는다."""
+def render_tv_forex_screener() -> str:
+    """외환(통화) 실시간 스크리너 — TradingView 공식 무료 Screener 위젯.
+
+    market-overview(고정 탭)와 달리 이 위젯은 실제로 TradingView가
+    매 순간 살아있는 시세로 종목을 나열/정렬하는 위젯이라, 우리가
+    "어떤 통화쌍을 보여줄지" 하드코딩하지 않아도 된다 — 사용자가
+    요청한 "고정된 상품이 아니라 시장에 따라 동적으로" 조건을 외환은
+    이 위젯으로 충족한다.
+    """
     cfg = dict(
         TV_BASE_CFG,
         width="100%",
         height="100%",
-        dateRange="12M",
-        showChart=True,
-        largeChartUrl="",
-        showSymbolLogo=True,
-        showFloatingTooltip=False,
-        plotLineColorGrowing="rgba(63,122,93,1)",
-        plotLineColorFalling="rgba(180,59,46,1)",
-        gridLineColor="rgba(200,204,196,0.3)",
-        scaleFontColor="rgba(75,81,92,1)",
-        belowLineFillColorGrowing="rgba(63,122,93,0.12)",
-        belowLineFillColorFalling="rgba(180,59,46,0.12)",
-        belowLineFillColorGrowingBottom="rgba(63,122,93,0)",
-        belowLineFillColorFallingBottom="rgba(180,59,46,0)",
-        symbolActiveColor="rgba(44,92,135,0.12)",
-        tabs=TV_MARKET_OVERVIEW_TABS,
+        market="forex",
+        showToolbar=True,
+        defaultColumn="overview",
+        defaultScreen="general",
     )
-    src = _tv_url("market-overview", cfg)
+    src = _tv_url("screener", cfg)
     return (
-        f'<div class="tv-overview">'
-        f'<iframe src="{src}" style="width:100%;height:420px;border:none" loading="lazy" '
-        f'title="TradingView Market Overview"></iframe></div>'
+        f'<div class="tv-screener">'
+        f'<div class="tv-cell-label">외환·통화 (실시간, TradingView 자체 정렬)</div>'
+        f'<iframe src="{src}" style="width:100%;height:400px;border:none" loading="lazy" '
+        f'title="Forex Screener"></iframe></div>'
     )
+
+
+def render_tv_crypto_heatmap() -> str:
+    """암호자산 시가총액 히트맵 — TradingView 공식 무료 위젯.
+
+    옛 개인 대시보드의 "가상자산" 화면(트리맵 + 코인 테이블)을
+    참고했다. 히트맵은 TradingView의 공식 crypto-coins-heatmap
+    위젯을 그대로 쓴다 — 색상/크기(시총) 계산 전부 TradingView가
+    실시간으로 처리한다.
+    """
+    cfg = dict(
+        TV_BASE_CFG,
+        dataSource="Crypto",
+        blockSize="market_cap_calc",
+        blockColor="change",
+        width="100%",
+        height="100%",
+        hasTopBar=True,
+        isDataSetEnabled=True,
+        isZoomEnabled=True,
+        hasSymbolTooltip=True,
+        isMonoSize=False,
+    )
+    src = _tv_url("crypto-coins-heatmap", cfg)
+    return (
+        f'<div class="tv-heatmap">'
+        f'<iframe src="{src}" style="width:100%;height:100%;border:none" loading="lazy" '
+        f'title="Crypto Heatmap"></iframe></div>'
+    )
+
+
+def render_tv_crypto_screener() -> str:
+    """암호자산 실시간 순위 테이블 — TradingView 공식 무료 Screener 위젯.
+
+    옛 대시보드의 코인 테이블(이름/가격/1h·24h·7d%/시총/거래량/차트)과
+    같은 역할. 목록과 정렬 모두 TradingView가 실시간으로 계산한다.
+    """
+    cfg = dict(
+        TV_BASE_CFG,
+        width="100%",
+        height="100%",
+        market="crypto",
+        showToolbar=True,
+        defaultColumn="overview",
+        defaultScreen="general",
+    )
+    src = _tv_url("screener", cfg)
+    return (
+        f'<div class="tv-screener">'
+        f'<iframe src="{src}" style="width:100%;height:100%;border:none" loading="lazy" '
+        f'title="Crypto Screener"></iframe></div>'
+    )
+
+
+def render_btc_dominance() -> str:
+    """비트코인 도미넌스(전체 암호자산 시총 대비 BTC 비중) 미니 차트.
+
+    옛 대시보드의 "BTC 도미넌스" 게이지를 값+추세선 형태로 대체했다.
+    TradingView의 CRYPTOCAP:BTC.D 심볼은 순수 수치(비중 %)라
+    매수/매도 신호 요소가 전혀 없다 — 아래 BTC 레인보우 밴드와 달리
+    컴플라이언스 문제가 없어서 그대로 채택했다.
+    """
+    cfg = dict(TV_BASE_CFG, symbol="CRYPTOCAP:BTC.D", dateRange="12M", width="100%", height="100%")
+    src = _tv_url("mini-symbol-overview", cfg)
+    color = _asset_color("암호자산")
+    return (
+        f'<div class="tv-cell">'
+        f'<div class="tv-cell-label" style="color:{color}">비트코인 도미넌스</div>'
+        f'<iframe src="{src}" style="width:100%;height:110px;border:none" loading="lazy" '
+        f'title="비트코인 도미넌스"></iframe></div>'
+    )
+
+
+def render_crypto_dashboard(fear_greed: dict | None = None) -> str:
+    """암호자산 실시간 현황 섹션 (히트맵 + 순위 테이블 + 도미넌스 + 공포·탐욕).
+
+    옛 개인 대시보드의 "가상자산" 화면을 참고해 만들었다. 다만 그
+    화면에 있던 "BTC 레인보우 밴드"(Fire Sale!/BUY!/Hold!/SELL
+    Seriously! 같은 매수·매도 레이블)는 이 사이트의 무권유 원칙과
+    정면으로 충돌해서 의도적으로 제외했다 — 대신 매수/매도 해석이
+    섞이지 않는 수치형 지표(도미넌스, 공포·탐욕 지수)만 담았다.
+    fear_greed는 가장 최근 세션 아카이브의 값을 재사용한다(별도
+    API 호출 없음).
+    """
+    fg_html = render_fear_greed(fear_greed) if fear_greed else ""
+    fg_cell = (
+        f'<div class="tv-cell fg-cell"><div class="tv-cell-label">비트코인 공포·탐욕 지수</div>{fg_html}</div>'
+        if fg_html else ""
+    )
+    return f"""
+    <div class="tv-crypto-dash">
+      <div class="tv-crypto-grid">
+        {render_tv_crypto_screener()}
+        {render_tv_crypto_heatmap()}
+      </div>
+      <div class="tv-crypto-stats">
+        {render_btc_dominance()}
+        {fg_cell}
+      </div>
+    </div>"""
 
 
 def render_asset_tags(asset_classes: list) -> str:
@@ -616,10 +679,20 @@ a{color:inherit}
 .tv-mini-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:14px 0 28px}
 .tv-cell{background:var(--card);border:1px solid var(--rule);padding:10px 12px 4px}
 .tv-cell-label{font-size:13px;font-weight:700;margin-bottom:4px}
-.tv-overview{background:var(--card);border:1px solid var(--rule);margin:0 0 44px;padding:6px}
+.tv-screener{background:var(--card);border:1px solid var(--rule);margin:0 0 20px;padding:6px}
 .tv-badge{font-size:12px;font-weight:400;color:var(--ink-soft);letter-spacing:.02em;margin-left:10px}
 @media (max-width:900px){.tv-mini-grid{grid-template-columns:repeat(2,1fr)}}
 @media (max-width:480px){.tv-mini-grid{grid-template-columns:1fr}}
+
+.tv-crypto-dash{margin:0 0 44px}
+.tv-crypto-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+.tv-crypto-grid .tv-screener,.tv-crypto-grid .tv-heatmap{margin:0;height:440px}
+.tv-heatmap{background:var(--card);border:1px solid var(--rule);padding:6px}
+.tv-crypto-stats{display:flex;gap:12px;flex-wrap:wrap}
+.tv-crypto-stats .tv-cell{flex:1 1 220px;max-width:280px}
+.fg-cell .fg-gauge{margin-top:0;padding-top:0;border-top:none}
+@media (max-width:1000px){.tv-crypto-grid{grid-template-columns:1fr}.tv-crypto-grid .tv-screener,.tv-crypto-grid .tv-heatmap{height:360px}}
+@media (max-width:640px){.tv-crypto-stats .tv-cell{flex:1 1 100%;max-width:none}}
 
 .log-row{display:grid;grid-template-columns:minmax(150px,auto) 1fr auto;gap:20px;align-items:center;
   padding:24px 0;border-top:1px solid var(--rule);text-decoration:none}
@@ -671,7 +744,9 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
   <div class="headline" style="margin-top:60px">GLOBAL ECONOMIC &amp; INVESTMENT INTELLIGENCE</div>
   <div class="section-title" style="margin-top:18px">실시간 마켓 위젯<span class="tv-badge">Powered by TradingView</span></div>
   {tv_mini_grid_html}
-  {tv_overview_html}
+  {tv_forex_screener_html}
+  <div class="section-title">가상자산 실시간 현황</div>
+  {tv_crypto_dashboard_html}
   <div class="section-title">세션별 아카이브</div>
   <div style="margin:0 0 90px">{rows}</div>
 </div>
@@ -683,6 +758,11 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
 def build_site():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     archive_files = sorted(glob.glob(f"{ARCHIVE_DIR}/*.json"), reverse=True)
+
+    # index.html의 공포·탐욕 게이지는 별도 API를 다시 부르지 않고,
+    # 가장 최근 세션 아카이브(archive_files[0], 최신순 정렬)의 값을
+    # 재사용한다.
+    latest_fear_greed = None
 
     log_rows = []
     for path in archive_files:
@@ -707,6 +787,8 @@ def build_site():
         global_picture = data.get("global_picture", {})
         market_snapshot = data.get("market_snapshot", {})
         fear_greed = data.get("fear_greed")
+        if latest_fear_greed is None and fear_greed:
+            latest_fear_greed = fear_greed
         asset_pulse_html = render_asset_pulse(global_picture.get("asset_class_pulse", []), market_snapshot, fear_greed)
         global_picture_html = render_global_picture(global_picture)
         issues_html = "".join(
@@ -744,7 +826,8 @@ def build_site():
         css=BASE_CSS,
         rows="".join(log_rows),
         tv_mini_grid_html=render_tv_mini_grid(),
-        tv_overview_html=render_tv_market_overview(),
+        tv_forex_screener_html=render_tv_forex_screener(),
+        tv_crypto_dashboard_html=render_crypto_dashboard(latest_fear_greed),
     )
     with open(f"{OUTPUT_DIR}/index.html", "w", encoding="utf-8") as f:
         f.write(index_html)
