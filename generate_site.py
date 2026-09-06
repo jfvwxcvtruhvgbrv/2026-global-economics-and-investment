@@ -83,7 +83,21 @@ INSIGHT_LABELS = [
 ]
 
 WD = ["월", "화", "수", "목", "금", "토", "일"]
-SESSION_LABEL = {"am": "오전", "pm": "오후"}
+# 아카이브에 "time"(HH:MM, KST, 실제 생성 시각) 필드가 없는 예전 세션
+# 데이터를 위한 대비값 — 스케줄된 실행 시각(06:13/18:13 KST) 기준.
+SESSION_TIME_FALLBACK = {"am": "06:13", "pm": "18:13"}
+
+
+def _time_label(data: dict) -> str:
+    """"오전/오후" 대신 실제 생성 시각을 24시간제 "00시 00분" 형식으로."""
+    time_str = data.get("time") or SESSION_TIME_FALLBACK.get(data.get("session"), "")
+    if not time_str or ":" not in time_str:
+        return ""
+    hh, _, mm = time_str.partition(":")
+    try:
+        return f"{int(hh):02d}시 {int(mm):02d}분"
+    except ValueError:
+        return ""
 
 
 def _pretty_date(date_str: str) -> str:
@@ -772,7 +786,8 @@ def build_site():
         # 세션 필드가 없는 예전 아카이브(하루 1회 시절)와도 호환되도록 처리
         session = data.get("session")
         slug = f"{date}-{session}" if session else date
-        session_suffix = f" · {SESSION_LABEL.get(session, '')}" if session else ""
+        time_label = _time_label(data)
+        session_suffix = f" · {time_label}" if time_label else ""
 
         issues = data.get("issues", [])
 
