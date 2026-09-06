@@ -497,6 +497,9 @@ def build_daily_archive(items: list[dict]) -> dict:
     return {
         "date": kst_now.strftime("%Y-%m-%d"),
         "session": "am" if kst_now.hour < 12 else "pm",
+        # 사이트에서 "오전/오후" 대신 실제 생성 시각(24시간, KST)을
+        # 그대로 보여주기 위한 필드. HH:MM 형식.
+        "time": kst_now.strftime("%H:%M"),
         "global_picture": result.get("global_picture", {}),
         "issues": result.get("issues", []),
     }
