@@ -310,23 +310,36 @@ TV_BASE_CFG = {
 # 실시간 미니 시세 16종. 자산군 5개 축을 모두 커버한다. (기존 12종에서
 # 나스닥100/다우존스/항셍/중국 ETF를 추가해 "주요 지수" 커버리지를
 # 사용자가 참고로 준 옛 대시보드 수준까지 넓혔다.)
+#
+# 2026-09 수정: 실제 배포된 사이트에서 아래 5개 티커가 위젯 오류/빈
+# 화면으로 표시된다는 사용자 제보를 받고 교체했다. 패턴: 실제
+# 거래소에 상장된 종목(주식·ETF·페어)은 정상 렌더링되고, 합성/복합
+# 지수 티커는 오류가 난다 — 이 판단은 사용자가 보내준 스크린샷을
+# 근거로 한 것이고, 이 샌드박스에서 tradingview.com에 직접 접속해
+# 재현·검증할 수는 없었다. 배포 후 실제 렌더링을 다시 확인해야 한다.
+#   - AMEX:TLT (오타, TLT는 NASDAQ 상장) → NASDAQ:TLT
+#   - CAPITALCOM:DE40 (DAX, 합성 지수) → AMEX:EWG (독일 ETF, 상장 종목)
+#   - TVC:HSI (항셍지수, 합성 지수) → AMEX:EWH (홍콩 ETF, 상장 종목)
+#   - TVC:US10Y (금리 자체, 합성 값) → AMEX:IEF (美 7-10Y 국채 ETF —
+#     가격은 금리와 반대로 움직이는 점에 유의, 라벨에 명시)
+#   - TVC:DXY (달러 인덱스, 합성 지수) → FX:EURUSD (유로/달러, 상장 페어)
 TV_MINI_SYMBOLS = [
     ("주식",      "FOREXCOM:SPXUSD", "S&P 500"),
     ("주식",      "FOREXCOM:NSXUSD", "나스닥 100"),
     ("주식",      "FOREXCOM:DJI",    "다우존스"),
     ("주식",      "INDEX:NKY",       "닛케이 225"),
-    ("주식",      "CAPITALCOM:DE40", "DAX"),
-    ("주식",      "TVC:HSI",         "항셍지수"),
+    ("주식",      "AMEX:EWG",        "독일 ETF"),
+    ("주식",      "AMEX:EWH",        "홍콩 ETF"),
     ("주식",      "NASDAQ:MCHI",     "중국 ETF"),
     ("주식",      "AMEX:EWY",        "MSCI 한국 ETF"),
-    ("채권·금리", "TVC:US10Y",       "미 10년물 금리"),
-    ("채권·금리", "AMEX:TLT",        "20년 국채 ETF"),
+    ("채권·금리", "AMEX:IEF",        "美 7-10Y 국채 ETF"),
+    ("채권·금리", "NASDAQ:TLT",      "20년 국채 ETF"),
     ("원자재",    "TVC:GOLD",        "금"),
     ("원자재",    "TVC:USOIL",       "WTI 원유"),
     ("암호자산",  "BINANCE:BTCUSDT", "비트코인"),
     ("암호자산",  "BINANCE:ETHUSDT", "이더리움"),
     ("외환",      "FX:USDKRW",       "달러/원"),
-    ("외환",      "TVC:DXY",         "달러 인덱스"),
+    ("외환",      "FX:EURUSD",       "유로/달러"),
 ]
 
 
@@ -355,34 +368,54 @@ def render_tv_mini_grid() -> str:
 # "주요 지수 / 선물·원자재 / ETF" 탭(고정 market-overview 위젯)은
 # 없앴다 — 이 세 자산군은 TradingView 무료 위젯 중 실시간 순위가
 # 바뀌는 스크리너를 공식 지원하지 않아서, 확실히 동적인 것만
-# (미니 그리드의 실시간 시세 16종 + 아래 외환/암호자산 스크리너)
-# 남기기로 사용자와 합의했다.
+# (미니 그리드의 실시간 시세 16종 + 아래 원화 외화 미니그리드 +
+# 코인별 실시간 시세 + 암호자산 히트맵) 남기기로 사용자와 합의했다.
+# 외환 스크리너(전체 유니버스 노출)와 암호자산 스크리너(코인이 아닌
+# 개별 거래소 페어 중복 노출) 두 위젯 모두 이후 "노이즈가 너무 많다"는
+# 제보를 받고 각각 원화 통화쌍 미니그리드 / 코인별 미니그리드로
+# 교체했다.
 
 
-def render_tv_forex_screener() -> str:
-    """외환(통화) 실시간 스크리너 — TradingView 공식 무료 Screener 위젯.
+# (TradingView 심볼, 한글 라벨) — 원화 대비 주요 외화 5종.
+# JPY/EUR/CNY/GBP·KRW는 TradingView에 직접 상장된 페어가 아니라
+# FX_IDC(계산된 크로스 환율) 벤더 심볼을 쓴다 — 이 벤더 심볼들은
+# 배포 후 실제 렌더링을 다시 확인해야 한다(이 샌드박스에서는
+# tradingview.com에 직접 접속해 검증할 수 없었다).
+KRW_FOREX_SYMBOLS = [
+    ("FX:USDKRW",     "달러/원"),
+    ("FX_IDC:JPYKRW", "엔/원"),
+    ("FX_IDC:EURKRW", "유로/원"),
+    ("FX_IDC:CNYKRW", "위안/원"),
+    ("FX_IDC:GBPKRW", "파운드/원"),
+]
 
-    market-overview(고정 탭)와 달리 이 위젯은 실제로 TradingView가
-    매 순간 살아있는 시세로 종목을 나열/정렬하는 위젯이라, 우리가
-    "어떤 통화쌍을 보여줄지" 하드코딩하지 않아도 된다 — 사용자가
-    요청한 "고정된 상품이 아니라 시장에 따라 동적으로" 조건을 외환은
-    이 위젯으로 충족한다.
+
+def render_krw_forex_grid() -> str:
+    """원화 대비 주요 외화 실시간 시세 — TradingView mini-symbol-overview 위젯.
+
+    기존에는 TradingView 공식 Screener 위젯(market="forex")을 썼는데,
+    이 위젯은 TradingView가 지원하는 전체 외환 유니버스를 그대로
+    나열해서 원화와 무관한 통화쌍(AUD 크로스 등)까지 뒤섞여 노출되는
+    문제가 있었다 — "어떤 통화쌍을 보여줄지" 필터링하는 공식 config
+    파라미터가 Screener 위젯에는 없다. 그래서 원화 관점에서 의미
+    있는 5개 통화쌍만 골라 미니 시세 타일로 대체했다. 미니 타일은
+    개별 심볼을 지정하는 방식이라 우리가 원하는 종목만 정확히
+    보여줄 수 있다.
     """
-    cfg = dict(
-        TV_BASE_CFG,
-        width="100%",
-        height="100%",
-        market="forex",
-        showToolbar=True,
-        defaultColumn="overview",
-        defaultScreen="general",
-    )
-    src = _tv_url("screener", cfg)
+    cells = []
+    for symbol, label in KRW_FOREX_SYMBOLS:
+        cfg = dict(TV_BASE_CFG, symbol=symbol, dateRange="12M", width="100%", height="100%")
+        src = _tv_url("mini-symbol-overview", cfg)
+        color = _asset_color("외환")
+        cells.append(
+            f'<div class="tv-cell">'
+            f'<div class="tv-cell-label" style="color:{color}">{_esc(label)}</div>'
+            f'<iframe src="{src}" style="width:100%;height:110px;border:none" loading="lazy" '
+            f'title="{_esc(label)}"></iframe></div>'
+        )
     return (
-        f'<div class="tv-screener">'
-        f'<div class="tv-cell-label">외환·통화 (실시간, TradingView 자체 정렬)</div>'
-        f'<iframe src="{src}" style="width:100%;height:400px;border:none" loading="lazy" '
-        f'title="Forex Screener"></iframe></div>'
+        '<div class="tv-cell-label" style="margin:0 0 6px;font-size:14px">원화 대비 주요 외화 (실시간)</div>'
+        f'<div class="tv-mini-grid tv-forex-grid">{"".join(cells)}</div>'
     )
 
 
@@ -415,26 +448,61 @@ def render_tv_crypto_heatmap() -> str:
     )
 
 
-def render_tv_crypto_screener() -> str:
-    """암호자산 실시간 순위 테이블 — TradingView 공식 무료 Screener 위젯.
+# (CoinMarketCap 코인 ID, 한글 라벨) — 시가총액 상위권 주요 코인 10종
+# 고정 목록. ID는 CoinMarketCap에서 코인마다 영구 고정으로 부여하는
+# 값이라(예: BTC=1, ETH=1027) 코인 이름이 바뀌어도 안정적이다.
+CMC_COIN_IDS = [
+    (1, "비트코인 (BTC)"),
+    (1027, "이더리움 (ETH)"),
+    (52, "리플 (XRP)"),
+    (1839, "바이낸스코인 (BNB)"),
+    (5426, "솔라나 (SOL)"),
+    (74, "도지코인 (DOGE)"),
+    (2010, "카르다노 (ADA)"),
+    (1958, "트론 (TRX)"),
+    (1975, "체인링크 (LINK)"),
+    (11419, "톤코인 (TON)"),
+]
 
-    옛 대시보드의 코인 테이블(이름/가격/1h·24h·7d%/시총/거래량/차트)과
-    같은 역할. 목록과 정렬 모두 TradingView가 실시간으로 계산한다.
+
+def render_crypto_coin_table() -> str:
+    """주요 코인별 실시간 시세 — CoinMarketCap 무료 Currency 위젯.
+
+    [아키텍처 예외 고지] 이 사이트의 다른 모든 TradingView 위젯은
+    <iframe>로 완전히 격리되어 있어 외부 스크립트가 우리 페이지 안에서
+    직접 실행되지 않는다. 그런데 TradingView의 Screener 위젯은
+    market="crypto"로 설정해도 코인 단위가 아니라 거래소별 개별 페어
+    (선물 파생상품 "BTCUSDT.P" 포함)를 중복 나열하고, 이를 코인 단위로
+    제한하는 공식 config 파라미터가 없다 — 실제 배포 화면에서
+    "63,066 매치"로 보고된 것이 그 증거다(모든 거래소·페어를 낱낱이
+    나열한 개수). 그래서 사용자가 요청한 "코인마켓캡에서 가져오기"
+    대안을 택했다: CoinMarketCap의 무료 Currency 위젯은
+    <script src="...currency.js"></script> 하나로 각 코인별 실시간
+    가격 타일을 렌더링해서 가독성 문제를 깔끔히 해결하지만,
+    TradingView처럼 완전히 샌드박스된 iframe이 아니라 우리 페이지
+    컨텍스트 안에서 실행되는 외부 스크립트라는 차이가 있다 — 이
+    사이트에서 이 지점이 유일한 예외다. 코인 목록은 "실시간 TOP N
+    자동 선정"이 아니라 시가총액 상위권 주요 코인 10종을 고정
+    선정한 것이며(가격/등락률 자체는 실시간), 실시간 순위·비중이
+    필요한 경우는 위 히트맵과 비트코인 도미넌스가 계속 담당한다.
     """
-    cfg = dict(
-        TV_BASE_CFG,
-        width="100%",
-        height="100%",
-        market="crypto",
-        showToolbar=True,
-        defaultColumn="overview",
-        defaultScreen="general",
-    )
-    src = _tv_url("screener", cfg)
+    cells = []
+    for cmc_id, label in CMC_COIN_IDS:
+        cells.append(
+            '<div class="tv-cell cmc-cell">'
+            f'<div class="tv-cell-label">{_esc(label)}</div>'
+            f'<div class="coinmarketcap-currency-widget" data-currencymarketcap-id="{cmc_id}" '
+            'data-base="USD" data-secondary="" data-ticker-shadow="false" '
+            'data-font-color="#3A2E12" data-border-color="transparent"></div>'
+            '</div>'
+        )
     return (
-        f'<div class="tv-screener">'
-        f'<iframe src="{src}" style="width:100%;height:100%;border:none" loading="lazy" '
-        f'title="Crypto Screener"></iframe></div>'
+        '<div class="tv-screener cmc-table">'
+        '<div class="tv-cell-label" style="margin:0 0 6px">코인별 실시간 시세 '
+        '<span class="tv-badge">Powered by CoinMarketCap</span></div>'
+        f'<div class="tv-mini-grid cmc-grid">{"".join(cells)}</div>'
+        '</div>'
+        '<script src="https://files.coinmarketcap.com/static/widget/currency.js"></script>'
     )
 
 
@@ -457,31 +525,79 @@ def render_btc_dominance() -> str:
     )
 
 
-def render_crypto_dashboard(fear_greed: dict | None = None) -> str:
-    """암호자산 실시간 현황 섹션 (히트맵 + 순위 테이블 + 도미넌스 + 공포·탐욕).
+def render_crypto_total_cap() -> str:
+    """전체 암호자산 시가총액(CRYPTOCAP:TOTAL) 미니 차트.
+
+    BTC 도미넌스(비중 %)와 짝을 이루는 지표 — 도미넌스가 "쏠림"을
+    보여준다면 이쪽은 시장 전체의 절대 규모 추세를 보여준다. 두 값
+    모두 매수/매도 신호가 섞이지 않는 순수 수치형 지표다.
+    """
+    cfg = dict(TV_BASE_CFG, symbol="CRYPTOCAP:TOTAL", dateRange="12M", width="100%", height="100%")
+    src = _tv_url("mini-symbol-overview", cfg)
+    color = _asset_color("암호자산")
+    return (
+        f'<div class="tv-cell">'
+        f'<div class="tv-cell-label" style="color:{color}">전체 암호자산 시가총액</div>'
+        f'<iframe src="{src}" style="width:100%;height:110px;border:none" loading="lazy" '
+        f'title="전체 암호자산 시가총액"></iframe></div>'
+    )
+
+
+def render_crypto_sentiment(sentiment: dict | None) -> str:
+    """BTC 무기한 선물 펀딩비율·미결제약정 — Binance 공개 API(키 불필요).
+
+    공포·탐욕 지수(설문/가격 기반 심리)와는 다른 각도의 심리 지표다:
+    펀딩비율이 크게 양(+)이면 파생상품 시장에서 롱(매수) 포지션이
+    우세해 비용을 내면서까지 롱을 유지한다는 뜻이고, 음(-)이면 그
+    반대다. 매수/매도 권유가 아니라 시장 포지셔닝의 쏠림 정도를
+    보여주는 수치일 뿐이라 이 사이트의 무권유 원칙과 충돌하지 않는다.
+    sentiment는 가장 최근 세션 아카이브의 값을 재사용한다(별도 API
+    호출 없음). 값이 없으면 빈 문자열을 반환해 카드 자체를 생략한다.
+    """
+    if not sentiment:
+        return ""
+    rate = sentiment.get("funding_rate_pct")
+    oi = sentiment.get("open_interest_btc")
+    rate_str = f"{rate:+.4f}%" if rate is not None else "—"
+    oi_str = f"{oi:,.0f} BTC" if oi is not None else "—"
+    return (
+        '<div class="tv-cell">'
+        '<div class="tv-cell-label">BTC 펀딩비율·미결제약정</div>'
+        f'<div class="sentiment-row"><span>펀딩비율(8h)</span><b>{rate_str}</b></div>'
+        f'<div class="sentiment-row"><span>미결제약정</span><b>{oi_str}</b></div>'
+        '<div class="sentiment-src">Binance 무기한 선물</div>'
+        '</div>'
+    )
+
+
+def render_crypto_dashboard(fear_greed: dict | None = None, crypto_sentiment: dict | None = None) -> str:
+    """암호자산 실시간 현황 섹션 (코인별 시세 + 히트맵 + 도미넌스/시총 + 심리지표).
 
     옛 개인 대시보드의 "가상자산" 화면을 참고해 만들었다. 다만 그
     화면에 있던 "BTC 레인보우 밴드"(Fire Sale!/BUY!/Hold!/SELL
     Seriously! 같은 매수·매도 레이블)는 이 사이트의 무권유 원칙과
     정면으로 충돌해서 의도적으로 제외했다 — 대신 매수/매도 해석이
-    섞이지 않는 수치형 지표(도미넌스, 공포·탐욕 지수)만 담았다.
-    fear_greed는 가장 최근 세션 아카이브의 값을 재사용한다(별도
-    API 호출 없음).
+    섞이지 않는 수치형 지표(시가총액, 도미넌스, 공포·탐욕 지수,
+    펀딩비율/미결제약정)만 담았다. fear_greed·crypto_sentiment는
+    가장 최근 세션 아카이브의 값을 재사용한다(별도 API 호출 없음).
     """
     fg_html = render_fear_greed(fear_greed) if fear_greed else ""
     fg_cell = (
         f'<div class="tv-cell fg-cell"><div class="tv-cell-label">비트코인 공포·탐욕 지수</div>{fg_html}</div>'
         if fg_html else ""
     )
+    sentiment_cell = render_crypto_sentiment(crypto_sentiment)
     return f"""
     <div class="tv-crypto-dash">
       <div class="tv-crypto-grid">
-        {render_tv_crypto_screener()}
+        {render_crypto_coin_table()}
         {render_tv_crypto_heatmap()}
       </div>
       <div class="tv-crypto-stats">
+        {render_crypto_total_cap()}
         {render_btc_dominance()}
         {fg_cell}
+        {sentiment_cell}
       </div>
     </div>"""
 
@@ -698,6 +814,10 @@ a{color:inherit}
 @media (max-width:900px){.tv-mini-grid{grid-template-columns:repeat(2,1fr)}}
 @media (max-width:480px){.tv-mini-grid{grid-template-columns:1fr}}
 
+.tv-forex-grid{grid-template-columns:repeat(5,1fr);margin:0 0 28px}
+@media (max-width:900px){.tv-forex-grid{grid-template-columns:repeat(3,1fr)}}
+@media (max-width:480px){.tv-forex-grid{grid-template-columns:repeat(2,1fr)}}
+
 .tv-crypto-dash{margin:0 0 44px}
 .tv-crypto-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
 .tv-crypto-grid .tv-screener,.tv-crypto-grid .tv-heatmap{margin:0;height:440px}
@@ -707,6 +827,16 @@ a{color:inherit}
 .fg-cell .fg-gauge{margin-top:0;padding-top:0;border-top:none}
 @media (max-width:1000px){.tv-crypto-grid{grid-template-columns:1fr}.tv-crypto-grid .tv-screener,.tv-crypto-grid .tv-heatmap{height:360px}}
 @media (max-width:640px){.tv-crypto-stats .tv-cell{flex:1 1 100%;max-width:none}}
+
+.cmc-table{overflow-y:auto}
+.cmc-grid{grid-template-columns:1fr;gap:6px;margin:0}
+.cmc-cell{padding:8px 12px 6px}
+
+.sentiment-row{display:flex;justify-content:space-between;align-items:baseline;
+  font-size:14px;padding:5px 0;border-top:1px solid var(--rule)}
+.sentiment-row:first-of-type{border-top:none}
+.sentiment-row b{font-size:15px}
+.sentiment-src{font-size:11px;color:var(--ink-soft);margin-top:4px}
 
 .log-row{display:grid;grid-template-columns:minmax(150px,auto) 1fr auto;gap:20px;align-items:center;
   padding:24px 0;border-top:1px solid var(--rule);text-decoration:none}
@@ -758,7 +888,7 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
   <div class="headline" style="margin-top:60px">GLOBAL ECONOMIC &amp; INVESTMENT INTELLIGENCE</div>
   <div class="section-title" style="margin-top:18px">실시간 마켓 위젯<span class="tv-badge">Powered by TradingView</span></div>
   {tv_mini_grid_html}
-  {tv_forex_screener_html}
+  {krw_forex_grid_html}
   <div class="section-title">가상자산 실시간 현황</div>
   {tv_crypto_dashboard_html}
   <div class="section-title">세션별 아카이브</div>
@@ -777,6 +907,9 @@ def build_site():
     # 가장 최근 세션 아카이브(archive_files[0], 최신순 정렬)의 값을
     # 재사용한다.
     latest_fear_greed = None
+    # BTC 펀딩비율/미결제약정(Binance)도 공포·탐욕 지수와 동일하게
+    # 가장 최근 세션 아카이브의 값을 재사용한다(별도 API 호출 없음).
+    latest_crypto_sentiment = None
 
     log_rows = []
     for path in archive_files:
@@ -804,6 +937,9 @@ def build_site():
         fear_greed = data.get("fear_greed")
         if latest_fear_greed is None and fear_greed:
             latest_fear_greed = fear_greed
+        crypto_sentiment = data.get("crypto_sentiment")
+        if latest_crypto_sentiment is None and crypto_sentiment:
+            latest_crypto_sentiment = crypto_sentiment
         asset_pulse_html = render_asset_pulse(global_picture.get("asset_class_pulse", []), market_snapshot, fear_greed)
         global_picture_html = render_global_picture(global_picture)
         issues_html = "".join(
@@ -841,8 +977,8 @@ def build_site():
         css=BASE_CSS,
         rows="".join(log_rows),
         tv_mini_grid_html=render_tv_mini_grid(),
-        tv_forex_screener_html=render_tv_forex_screener(),
-        tv_crypto_dashboard_html=render_crypto_dashboard(latest_fear_greed),
+        krw_forex_grid_html=render_krw_forex_grid(),
+        tv_crypto_dashboard_html=render_crypto_dashboard(latest_fear_greed, latest_crypto_sentiment),
     )
     with open(f"{OUTPUT_DIR}/index.html", "w", encoding="utf-8") as f:
         f.write(index_html)
