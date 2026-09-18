@@ -143,6 +143,41 @@ def fetch_fear_greed():
         return None
 
 
+def fetch_crypto_sentiment():
+    """BTC 무기한 선물 펀딩비율·미결제약정 — Binance 공개 API(키 불필요).
+
+    공포·탐욕 지수(설문/가격 기반 심리)와는 다른 각도의 파생상품
+    포지셔닝 지표다. 매수/매도 권유가 아니라 시장이 롱/숏 어느
+    쪽으로 쏠려 있는지를 보여주는 수치일 뿐이다. 실패하면 None을
+    반환한다 — 호출부는 None이면 그 카드를 건너뛴다.
+    """
+    try:
+        funding_resp = requests.get(
+            "https://fapi.binance.com/fapi/v1/premiumIndex",
+            params={"symbol": "BTCUSDT"},
+            timeout=REQUEST_TIMEOUT,
+        )
+        funding_resp.raise_for_status()
+        funding = funding_resp.json()
+
+        oi_resp = requests.get(
+            "https://fapi.binance.com/fapi/v1/openInterest",
+            params={"symbol": "BTCUSDT"},
+            timeout=REQUEST_TIMEOUT,
+        )
+        oi_resp.raise_for_status()
+        oi = oi_resp.json()
+
+        return {
+            "funding_rate_pct": round(float(funding["lastFundingRate"]) * 100, 4),
+            "open_interest_btc": round(float(oi["openInterest"]), 1),
+            "mark_price": round(float(funding["markPrice"]), 1),
+        }
+    except Exception as e:
+        print(f"[WARN] Binance 펀딩비율/미결제약정 수집 실패: {e}")
+        return None
+
+
 def fetch_market_snapshot() -> dict:
     """자산군별 실제 시세 시계열 스냅샷을 만든다.
 
@@ -190,4 +225,5 @@ if __name__ == "__main__":
     print(json.dumps({
         "market_snapshot": fetch_market_snapshot(),
         "fear_greed": fetch_fear_greed(),
+        "crypto_sentiment": fetch_crypto_sentiment(),
     }, ensure_ascii=False, indent=2))
