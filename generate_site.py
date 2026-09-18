@@ -448,61 +448,58 @@ def render_tv_crypto_heatmap() -> str:
     )
 
 
-# (CoinMarketCap 코인 ID, 한글 라벨) — 시가총액 상위권 주요 코인 10종
-# 고정 목록. ID는 CoinMarketCap에서 코인마다 영구 고정으로 부여하는
-# 값이라(예: BTC=1, ETH=1027) 코인 이름이 바뀌어도 안정적이다.
-CMC_COIN_IDS = [
-    (1, "비트코인 (BTC)"),
-    (1027, "이더리움 (ETH)"),
-    (52, "리플 (XRP)"),
-    (1839, "바이낸스코인 (BNB)"),
-    (5426, "솔라나 (SOL)"),
-    (74, "도지코인 (DOGE)"),
-    (2010, "카르다노 (ADA)"),
-    (1958, "트론 (TRX)"),
-    (1975, "체인링크 (LINK)"),
-    (11419, "톤코인 (TON)"),
+# (TradingView 심볼, 한글 라벨) — 시가총액 상위권 주요 코인 10종
+# 고정 목록. 전부 Binance 현물(spot) 페어라 실제 상장 종목이다.
+CRYPTO_COIN_SYMBOLS = [
+    ("BINANCE:BTCUSDT",  "비트코인 (BTC)"),
+    ("BINANCE:ETHUSDT",  "이더리움 (ETH)"),
+    ("BINANCE:XRPUSDT",  "리플 (XRP)"),
+    ("BINANCE:BNBUSDT",  "바이낸스코인 (BNB)"),
+    ("BINANCE:SOLUSDT",  "솔라나 (SOL)"),
+    ("BINANCE:DOGEUSDT", "도지코인 (DOGE)"),
+    ("BINANCE:ADAUSDT",  "카르다노 (ADA)"),
+    ("BINANCE:TRXUSDT",  "트론 (TRX)"),
+    ("BINANCE:LINKUSDT", "체인링크 (LINK)"),
+    ("BINANCE:TONUSDT",  "톤코인 (TON)"),
 ]
 
 
-def render_crypto_coin_table() -> str:
-    """주요 코인별 실시간 시세 — CoinMarketCap 무료 Currency 위젯.
+def render_crypto_coin_grid() -> str:
+    """주요 코인별 실시간 시세 — TradingView mini-symbol-overview 위젯(iframe).
 
-    [아키텍처 예외 고지] 이 사이트의 다른 모든 TradingView 위젯은
-    <iframe>로 완전히 격리되어 있어 외부 스크립트가 우리 페이지 안에서
-    직접 실행되지 않는다. 그런데 TradingView의 Screener 위젯은
-    market="crypto"로 설정해도 코인 단위가 아니라 거래소별 개별 페어
-    (선물 파생상품 "BTCUSDT.P" 포함)를 중복 나열하고, 이를 코인 단위로
-    제한하는 공식 config 파라미터가 없다 — 실제 배포 화면에서
-    "63,066 매치"로 보고된 것이 그 증거다(모든 거래소·페어를 낱낱이
-    나열한 개수). 그래서 사용자가 요청한 "코인마켓캡에서 가져오기"
-    대안을 택했다: CoinMarketCap의 무료 Currency 위젯은
-    <script src="...currency.js"></script> 하나로 각 코인별 실시간
-    가격 타일을 렌더링해서 가독성 문제를 깔끔히 해결하지만,
-    TradingView처럼 완전히 샌드박스된 iframe이 아니라 우리 페이지
-    컨텍스트 안에서 실행되는 외부 스크립트라는 차이가 있다 — 이
-    사이트에서 이 지점이 유일한 예외다. 코인 목록은 "실시간 TOP N
-    자동 선정"이 아니라 시가총액 상위권 주요 코인 10종을 고정
-    선정한 것이며(가격/등락률 자체는 실시간), 실시간 순위·비중이
-    필요한 경우는 위 히트맵과 비트코인 도미넌스가 계속 담당한다.
+    [교체 이력] 처음에는 CoinMarketCap의 무료 Currency 위젯
+    (<script src="...currency.js"> 기반)으로 구현했었는데, 실제
+    배포 후 코인 이름만 뜨고 가격은 전혀 표시되지 않는 문제를
+    사용자가 확인했다(위젯 스크립트가 우리 페이지 컨텍스트에서
+    기대대로 동작하지 않은 것으로 보이며, 이 샌드박스에서는
+    coinmarketcap.com에 직접 접속해 재현·디버그할 수 없었다). 그래서
+    사이트의 다른 모든 위젯과 동일한, 이미 안정 동작이 확인된
+    TradingView mini-symbol-overview(iframe) 패턴으로 되돌렸다 —
+    메인 미니그리드의 BINANCE:BTCUSDT/ETHUSDT가 정상 렌더링되는
+    것과 완전히 같은 방식이라 신뢰도가 높다. 이로써 "외부 스크립트가
+    페이지 안에서 직접 실행되는 유일한 예외"였던 아키텍처 예외도
+    자연히 사라졌다 — 사이트 전체가 다시 iframe-only 원칙으로
+    통일됐다. 코인 목록은 "실시간 TOP N 자동 선정"이 아니라 시가총액
+    상위권 주요 코인 10종을 고정 선정한 것이며(가격/등락률 자체는
+    실시간), 실시간 순위·비중이 필요한 경우는 아래 히트맵과
+    비트코인 도미넌스가 계속 담당한다.
     """
+    color = _asset_color("암호자산")
     cells = []
-    for cmc_id, label in CMC_COIN_IDS:
+    for symbol, label in CRYPTO_COIN_SYMBOLS:
+        cfg = dict(TV_BASE_CFG, symbol=symbol, dateRange="12M", width="100%", height="100%")
+        src = _tv_url("mini-symbol-overview", cfg)
         cells.append(
-            '<div class="tv-cell cmc-cell">'
-            f'<div class="tv-cell-label">{_esc(label)}</div>'
-            f'<div class="coinmarketcap-currency-widget" data-currencymarketcap-id="{cmc_id}" '
-            'data-base="USD" data-secondary="" data-ticker-shadow="false" '
-            'data-font-color="#3A2E12" data-border-color="transparent"></div>'
-            '</div>'
+            f'<div class="tv-cell">'
+            f'<div class="tv-cell-label" style="color:{color}">{_esc(label)}</div>'
+            f'<iframe src="{src}" style="width:100%;height:110px;border:none" loading="lazy" '
+            f'title="{_esc(label)}"></iframe></div>'
         )
     return (
-        '<div class="tv-screener cmc-table">'
-        '<div class="tv-cell-label" style="margin:0 0 6px">코인별 실시간 시세 '
-        '<span class="tv-badge">Powered by CoinMarketCap</span></div>'
-        f'<div class="tv-mini-grid cmc-grid">{"".join(cells)}</div>'
+        '<div class="tv-screener coin-table">'
+        '<div class="tv-cell-label" style="margin:0 0 6px">코인별 실시간 시세</div>'
+        f'<div class="tv-mini-grid coin-grid">{"".join(cells)}</div>'
         '</div>'
-        '<script src="https://files.coinmarketcap.com/static/widget/currency.js"></script>'
     )
 
 
@@ -590,7 +587,7 @@ def render_crypto_dashboard(fear_greed: dict | None = None, crypto_sentiment: di
     return f"""
     <div class="tv-crypto-dash">
       <div class="tv-crypto-grid">
-        {render_crypto_coin_table()}
+        {render_crypto_coin_grid()}
         {render_tv_crypto_heatmap()}
       </div>
       <div class="tv-crypto-stats">
@@ -828,9 +825,9 @@ a{color:inherit}
 @media (max-width:1000px){.tv-crypto-grid{grid-template-columns:1fr}.tv-crypto-grid .tv-screener,.tv-crypto-grid .tv-heatmap{height:360px}}
 @media (max-width:640px){.tv-crypto-stats .tv-cell{flex:1 1 100%;max-width:none}}
 
-.cmc-table{overflow-y:auto}
-.cmc-grid{grid-template-columns:1fr;gap:6px;margin:0}
-.cmc-cell{padding:8px 12px 6px}
+.coin-table{overflow-y:auto}
+.coin-grid{grid-template-columns:repeat(2,1fr);gap:8px;margin:0}
+@media (max-width:640px){.coin-grid{grid-template-columns:1fr}}
 
 .sentiment-row{display:flex;justify-content:space-between;align-items:baseline;
   font-size:14px;padding:5px 0;border-top:1px solid var(--rule)}
