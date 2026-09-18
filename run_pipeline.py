@@ -20,7 +20,7 @@ import sys
 import datetime as dt
 
 from fetch_sources import fetch_today
-from market_data import fetch_market_snapshot, fetch_fear_greed
+from market_data import fetch_market_snapshot, fetch_fear_greed, fetch_crypto_sentiment
 from cluster_and_summarize import build_daily_archive
 from generate_site import build_site
 
@@ -47,10 +47,15 @@ def main():
     if fear_greed:
         print(f"    → 공포·탐욕 지수: {fear_greed['value']} ({fear_greed['classification']})")
 
+    crypto_sentiment = fetch_crypto_sentiment()
+    if crypto_sentiment:
+        print(f"    → BTC 펀딩비율: {crypto_sentiment['funding_rate_pct']}% / 미결제약정: {crypto_sentiment['open_interest_btc']} BTC")
+
     print("[3/4] Claude로 3단계(Map→Chunk-Reduce→Final Funnel) 이슈 클러스터링 + 마켓 픽처 생성 중...")
     archive = build_daily_archive(items)
     archive["market_snapshot"] = market_snapshot
     archive["fear_greed"] = fear_greed
+    archive["crypto_sentiment"] = crypto_sentiment
     os.makedirs("archive", exist_ok=True)
 
     # 파일명에 한국시간 날짜 + 세션(오전/오후)을 반영해 하루 두 번 실행해도
