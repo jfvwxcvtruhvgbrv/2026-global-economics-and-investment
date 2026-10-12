@@ -38,9 +38,17 @@ FRED_SERIES = [
     ("다우존스", "주식", "DJIA"),
     ("미국 10년물 국채금리", "채권·금리", "DGS10"),
     ("미국 2년물 국채금리", "채권·금리", "DGS2"),
+    ("미국 3년물 국채금리", "채권·금리", "DGS3"),
     ("연방기금금리", "채권·금리", "FEDFUNDS"),
     ("WTI 원유", "원자재", "DCOILWTICO"),
     ("브렌트유", "원자재", "DCOILBRENTEU"),
+]
+
+# 달러 인덱스(Broad, 미 연준 무역가중). TradingView의 DXY 심볼이 위젯에서
+# 오류가 나서 FRED 일별 값으로 대신한다. 아래 FX 작업 뒤에 제출해서 "외환"
+# 자산군 목록의 첫 번째 항목(원/달러)이 바뀌지 않게 한다.
+FRED_EXTRA_SERIES = [
+    ("달러 인덱스 (Broad)", "외환", "DTWEXBGS"),
 ]
 
 # (표시 이름, 자산군, Kraken pair 코드)
@@ -65,7 +73,7 @@ def _pct_change(values):
 
 def _fetch_fred_series(series_id: str):
     if not FRED_API_KEY:
-        return None
+        return None, None
     end = dt.date.today()
     start = end - dt.timedelta(days=LOOKBACK_DAYS)
     resp = requests.get(
@@ -81,7 +89,10 @@ def _fetch_fred_series(series_id: str):
     )
     resp.raise_for_status()
     obs = resp.json().get("observations", [])
-    return [float(o["value"]) for o in obs if o.get("value") not in (".", None, "")]
+    valid = [o for o in obs if o.get("value") not in (".", None, "")]
+    values = [float(o["value"]) for o in valid]
+    last_date = valid[-1].get("date") if valid else None
+    return values, last_date  # 기준일(last_date)은 카드의 "기준 YYYY-MM-DD" 배지에 쓴다
 
 
 def _fetch_kraken_series(pair: str):
@@ -143,38 +154,82 @@ def fetch_fear_greed():
         return None
 
 
-def fetch_crypto_sentiment():
-    """BTC 무기한 선물 펀딩비율·미결제약정 — Binance 공개 API(키 불필요).
+def _fetch_krw_btc_price():
+    """국내 거래소 BTC 원화가. 업비트 우선, 실패하면 빗썸으로 대체.
 
-    공포·탐욕 지수(설문/가격 기반 심리)와는 다른 각도의 파생상품
-    포지셔닝 지표다. 매수/매도 권유가 아니라 시장이 롱/숏 어느
-    쪽으로 쏠려 있는지를 보여주는 수치일 뿐이다. 실패하면 None을
-    반환한다 — 호출부는 None이면 그 카드를 건너뛴다.
+    반환: (가격, 거래소 이름). 둘 다 실패하면 예외를 그대로 올린다.
     """
     try:
-        funding_resp = requests.get(
-            "https://fapi.binance.com/fapi/v1/premiumIndex",
-            params={"symbol": "BTCUSDT"},
+        resp = requests.get(
+            "https://api.upbit.com/v1/ticker",
+            params={"markets": "KRW-BTC"},
             timeout=REQUEST_TIMEOUT,
         )
-        funding_resp.raise_for_status()
-        funding = funding_resp.json()
+        resp.raise_for_status()
+        return float(resp.json()[0]["trade_price"]), "업비트"
+    except Exception as e:
+        print(f"[WARN] 업비트 BTC 원화가 수집 실패, 빗썸으로 대체 시도: {e}")
+    resp = requests.get(
+        "https://api.bithumb.com/public/ticker/BTC_KRW",
+        timeout=REQUEST_TIMEOUT,
+    )
+    resp.raise_for_status()
+    body = resp.json()
+    if body.get("status") != "0000":
+        raise RuntimeError(f"빗썸 응답 오류: {body}")
+    return float(body["data"]["closing_price"]), "빗썸"
 
-        oi_resp = requests.get(
-            "https://fapi.binance.com/fapi/v1/openInterest",
-            params={"symbol": "BTCUSDT"},
+
+def fetch_crypto_sentiment():
+    """김치 프리미엄 — 국내 거래소 BTC 원화가 vs 해외 달러가 환산가.
+
+    프리미엄(%) = 국내 BTC 원화가 / (Kraken BTC/USD x 달러/원) - 1.
+    가격 괴리를 보여주는 수치일 뿐 매수/매도 신호가 아니다. 달러/원은
+    Frankfurter(ECB 기준환율, 영업일 1회 갱신)라 실시간 환율과 약간
+    어긋날 수 있어 "참고용 근사치"로 표시한다.
+
+    이전에는 Binance 선물의 펀딩비율·미결제약정을 썼지만, GitHub
+    Actions 서버(미국 IP)에서 Binance가 451로 차단해 항상 실패해서
+    이 지표로 교체했다. 실패하면 None을 반환한다 — 호출부는 None이면
+    그 카드를 건너뛴다.
+    """
+    try:
+        krw_price, venue = _fetch_krw_btc_price()
+
+        kr = requests.get(
+            "https://api.kraken.com/0/public/Ticker",
+            params={"pair": "XBTUSD"},
             timeout=REQUEST_TIMEOUT,
         )
-        oi_resp.raise_for_status()
-        oi = oi_resp.json()
+        kr.raise_for_status()
+        kdata = kr.json()
+        if kdata.get("error"):
+            raise RuntimeError(str(kdata["error"]))
+        result = kdata.get("result", {})
+        key = next(iter(result))
+        usd_price = float(result[key]["c"][0])  # c = 마지막 체결가 [가격, 수량]
 
+        fx = requests.get(
+            "https://api.frankfurter.dev/v1/latest",
+            params={"base": "USD", "symbols": "KRW"},
+            timeout=REQUEST_TIMEOUT,
+        )
+        fx.raise_for_status()
+        usdkrw = float(fx.json()["rates"]["KRW"])
+
+        global_krw = usd_price * usdkrw
+        premium_pct = round((krw_price / global_krw - 1) * 100, 2)
+        now_kst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
         return {
-            "funding_rate_pct": round(float(funding["lastFundingRate"]) * 100, 4),
-            "open_interest_btc": round(float(oi["openInterest"]), 1),
-            "mark_price": round(float(funding["markPrice"]), 1),
+            "kimchi_premium_pct": premium_pct,
+            "krw_price": round(krw_price),
+            "usd_price": round(usd_price, 1),
+            "usdkrw": round(usdkrw, 2),
+            "venue": venue,
+            "as_of": now_kst.strftime("%Y-%m-%d %H:%M"),
         }
     except Exception as e:
-        print(f"[WARN] Binance 펀딩비율/미결제약정 수집 실패: {e}")
+        print(f"[WARN] 김치 프리미엄 수집 실패: {e}")
         return None
 
 
@@ -187,18 +242,19 @@ def fetch_market_snapshot() -> dict:
     """
     snapshot: dict[str, list] = {}
 
-    def _add(label, asset_class, series):
+    def _add(label, asset_class, series, as_of=None):
         if not series or len(series) < 2:
             return
         trimmed = series[-CHART_POINTS:]
-        snapshot.setdefault(asset_class, []).append(
-            {
-                "label": label,
-                "series": trimmed,
-                "latest": trimmed[-1],
-                "change_pct": _pct_change(trimmed),
-            }
-        )
+        entry = {
+            "label": label,
+            "series": trimmed,
+            "latest": trimmed[-1],
+            "change_pct": _pct_change(trimmed),
+        }
+        if as_of:
+            entry["as_of"] = as_of  # 데이터 기준일(예: FRED 마지막 관측일)
+        snapshot.setdefault(asset_class, []).append(entry)
 
     jobs = []
     with ThreadPoolExecutor(max_workers=8) as executor:
@@ -208,11 +264,17 @@ def fetch_market_snapshot() -> dict:
             jobs.append((executor.submit(_fetch_kraken_series, pair), label, asset_class, "Kraken", pair))
         for label, asset_class, symbol, base in FX_PAIRS:
             jobs.append((executor.submit(_fetch_fx_series, symbol, base), label, asset_class, "Frankfurter", symbol))
+        for label, asset_class, series_id in FRED_EXTRA_SERIES:
+            jobs.append((executor.submit(_fetch_fred_series, series_id), label, asset_class, "FRED", series_id))
 
         for future, label, asset_class, source_name, ident in jobs:
             try:
-                series = future.result()
-                _add(label, asset_class, series)
+                result = future.result()
+                if source_name == "FRED":
+                    series, as_of = result
+                    _add(label, asset_class, series, as_of)
+                else:
+                    _add(label, asset_class, result)
             except Exception as e:
                 print(f"[WARN] {source_name} {ident} 수집 실패: {e}")
 
