@@ -1,7 +1,7 @@
 {
   "date": "2026-10-12",
   "session": "am",
-  "time": "00:37",
+  "time": "09:32",
   "global_picture": {},
   "issues": [],
   "market_snapshot": {
@@ -494,7 +494,6 @@
       {
         "label": "비트코인 (BTC/USD)",
         "series": [
-          63423.3,
           62979.4,
           63024.3,
           62819.1,
@@ -553,15 +552,15 @@
           81683.8,
           82559.4,
           82912.7,
-          83178.8
+          83675.6,
+          83773.2
         ],
-        "latest": 83178.8,
-        "change_pct": 31.15
+        "latest": 83773.2,
+        "change_pct": 33.02
       },
       {
         "label": "이더리움 (ETH/USD)",
         "series": [
-          1884.56,
           1880.21,
           1881.19,
           1873.89,
@@ -620,10 +619,11 @@
           2472.9,
           2485.34,
           2504.09,
-          2510.17
+          2534.19,
+          2539.73
         ],
-        "latest": 2510.17,
-        "change_pct": 33.2
+        "latest": 2539.73,
+        "change_pct": 35.08
       }
     ],
     "외환": [
@@ -831,9 +831,9 @@
     ]
   },
   "fear_greed": {
-    "value": 61,
+    "value": 69,
     "classification": "Greed",
-    "prev_value": 64
+    "prev_value": 61
   },
   "crypto_sentiment": null
 }
