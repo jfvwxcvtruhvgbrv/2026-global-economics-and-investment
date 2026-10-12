@@ -17,6 +17,7 @@ from config import (
     COMMUNITY_SOURCES,
     REQUEST_USER_AGENT,
     REQUEST_DELAY_SECONDS,
+    REQUEST_TIMEOUT_SECONDS,
 )
 
 
@@ -43,7 +44,11 @@ def fetch_rss_feeds() -> list[Item]:
             # feedparser.parse(url)는 자체 타임아웃이 없어 응답이 느린
             # 서버를 만나면 무한정 멈출 수 있다. 반드시 requests로
             # 타임아웃을 걸어 먼저 받아온 뒤 그 내용만 파싱한다.
-            resp = requests.get(url, headers=headers, timeout=10)
+            try:
+                resp = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
+            except requests.exceptions.Timeout:
+                # 일시적으로 느린 서버를 위해 한 번만 재시도한다.
+                resp = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
             resp.raise_for_status()
             feed = feedparser.parse(resp.content)
             for entry in feed.entries[:20]:
