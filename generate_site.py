@@ -323,6 +323,11 @@ TV_BASE_CFG = {
 #   - TVC:US10Y (금리 자체, 합성 값) → AMEX:IEF (美 7-10Y 국채 ETF —
 #     가격은 금리와 반대로 움직이는 점에 유의, 라벨에 명시)
 #   - TVC:DXY (달러 인덱스, 합성 지수) → FX:EURUSD (유로/달러, 상장 페어)
+# 2026-10 변경: 은(TVC:SILVER)·브렌트유(TVC:UKOIL)를 추가하고, 바로 아래
+# "원화 대비 주요 외화" 그리드와 겹치는 외환 2종(달러/원, 유로/달러)은
+# 뺐다 — 16칸(4x4)을 유지하면서 중복을 없애기 위함. TVC:SILVER/UKOIL은
+# 잘 표시되는 TVC:GOLD/USOIL과 같은 계열이지만 이 환경에서는 실제
+# 렌더링을 검증하지 못했으므로 배포 후 확인이 필요하다.
 TV_MINI_SYMBOLS = [
     ("주식",      "FOREXCOM:SPXUSD", "S&P 500"),
     ("주식",      "FOREXCOM:NSXUSD", "나스닥 100"),
@@ -335,12 +340,75 @@ TV_MINI_SYMBOLS = [
     ("채권·금리", "AMEX:IEF",        "美 7-10Y 국채 ETF"),
     ("채권·금리", "NASDAQ:TLT",      "20년 국채 ETF"),
     ("원자재",    "TVC:GOLD",        "금"),
+    ("원자재",    "TVC:SILVER",      "은"),
     ("원자재",    "TVC:USOIL",       "WTI 원유"),
+    ("원자재",    "TVC:UKOIL",       "브렌트유"),
     ("암호자산",  "BINANCE:BTCUSDT", "비트코인"),
     ("암호자산",  "BINANCE:ETHUSDT", "이더리움"),
-    ("외환",      "FX:USDKRW",       "달러/원"),
-    ("외환",      "FX:EURUSD",       "유로/달러"),
 ]
+
+
+# (market_snapshot 라벨, 카드 제목, 종류) — FRED 일별 값으로 직접 그리는
+# 금리·달러 카드. TradingView 미니 위젯은 금리(TVC:US10Y)와 달러인덱스
+# (TVC:DXY) 심볼이 오류가 나서 쓸 수 없어 이쪽으로 대체했다.
+MACRO_CARDS = [
+    ("미국 2년물 국채금리",  "미 국채 2년",  "rate"),
+    ("미국 3년물 국채금리",  "미 국채 3년",  "rate"),
+    ("미국 10년물 국채금리", "미 국채 10년", "rate"),
+    ("달러 인덱스 (Broad)", "달러 인덱스 (Broad)", "index"),
+]
+
+
+def _find_instrument(snapshot: dict, label: str) -> dict | None:
+    for insts in (snapshot or {}).values():
+        for inst in insts:
+            if inst.get("label") == label:
+                return inst
+    return None
+
+
+def render_macro_cards(snapshot: dict | None) -> str:
+    """금리·달러 카드 — 가장 최근 정상 세션 아카이브의 FRED 값을 재사용한다.
+
+    네이버 증권의 "환율·시장지표" 패널처럼 값 + 변화 + 추세선을 한 카드에
+    담고, "일별 · 기준 날짜" 배지로 실시간 값이 아님을 분명히 한다
+    (FRED는 일별 값이고 일부 시리즈는 며칠 늦게 갱신된다). 변화는 차트
+    구간(최근 약 3개월) 처음 대비이며, 금리는 %p, 달러 인덱스는 %로
+    표시한다. 값이 하나도 없으면(FRED_API_KEY 미설정 등) 섹션 전체를
+    생략한다. 상승/하락 색은 쓰지 않는다(매수·매도 신호로 읽히지 않도록).
+    """
+    cells = []
+    for label, title, kind in MACRO_CARDS:
+        inst = _find_instrument(snapshot or {}, label)
+        series = (inst or {}).get("series") or []
+        if len(series) < 2:
+            continue
+        latest = inst.get("latest", series[-1])
+        color = _asset_color("채권·금리" if kind == "rate" else "외환")
+        if kind == "rate":
+            val = f"{latest:.2f}%"
+            delta = f"{latest - series[0]:+.2f}%p"
+        else:
+            val = f"{latest:.2f}"
+            delta = f"{(latest / series[0] - 1) * 100:+.2f}%" if series[0] else ""
+        as_of = inst.get("as_of")
+        badge = f"일별 · 기준 {as_of}" if as_of else "일별 값"
+        cells.append(
+            '<div class="tv-cell macro-cell">'
+            f'<div class="tv-cell-label" style="color:{color}">{_esc(title)}</div>'
+            f'<div class="macro-row"><span class="macro-val">{val}</span>'
+            f'{_sparkline_svg(series, width=96, height=30, color=color)}</div>'
+            f'<div class="macro-delta">3개월 전 대비 {delta}</div>'
+            f'<div class="macro-badge">{_esc(badge)}</div>'
+            '</div>'
+        )
+    if not cells:
+        return ""
+    return (
+        '<div class="tv-cell-label" style="margin:0 0 6px;font-size:14px">'
+        '금리·달러 <span class="tv-badge">FRED 일별 값 · 실시간 아님</span></div>'
+        f'<div class="tv-mini-grid macro-grid">{"".join(cells)}</div>'
+    )
 
 
 def render_tv_mini_grid() -> str:
@@ -541,28 +609,34 @@ def render_crypto_total_cap() -> str:
 
 
 def render_crypto_sentiment(sentiment: dict | None) -> str:
-    """BTC 무기한 선물 펀딩비율·미결제약정 — Binance 공개 API(키 불필요).
+    """BTC 김치 프리미엄 카드 — 국내 거래소 원화가 vs 해외 달러가 환산가.
 
-    공포·탐욕 지수(설문/가격 기반 심리)와는 다른 각도의 심리 지표다:
-    펀딩비율이 크게 양(+)이면 파생상품 시장에서 롱(매수) 포지션이
-    우세해 비용을 내면서까지 롱을 유지한다는 뜻이고, 음(-)이면 그
-    반대다. 매수/매도 권유가 아니라 시장 포지셔닝의 쏠림 정도를
-    보여주는 수치일 뿐이라 이 사이트의 무권유 원칙과 충돌하지 않는다.
-    sentiment는 가장 최근 세션 아카이브의 값을 재사용한다(별도 API
-    호출 없음). 값이 없으면 빈 문자열을 반환해 카드 자체를 생략한다.
+    공포·탐욕 지수(심리 지수)와 다른 각도의 수치다: 국내 가격이 해외
+    환산가보다 얼마나 비싼지/싼지를 보여줄 뿐, 매수/매도 신호가 아니라서
+    이 사이트의 무권유 원칙과 충돌하지 않는다. 달러/원은 ECB 기준환율
+    (영업일 1회 갱신)이라 "참고용 근사치"로 표시한다. sentiment는 가장
+    최근 정상 세션 아카이브의 값을 재사용하고(별도 API 호출 없음),
+    기준 시각을 카드에 함께 보여준다. 예전 아카이브의 Binance 필드만
+    있는 값이거나 값이 없으면 빈 문자열을 반환해 카드를 생략한다.
     """
-    if not sentiment:
+    if not sentiment or sentiment.get("kimchi_premium_pct") is None:
         return ""
-    rate = sentiment.get("funding_rate_pct")
-    oi = sentiment.get("open_interest_btc")
-    rate_str = f"{rate:+.4f}%" if rate is not None else "—"
-    oi_str = f"{oi:,.0f} BTC" if oi is not None else "—"
+    premium = sentiment["kimchi_premium_pct"]
+    krw = sentiment.get("krw_price")
+    usd = sentiment.get("usd_price")
+    fx = sentiment.get("usdkrw")
+    venue = sentiment.get("venue", "국내 거래소")
+    as_of = sentiment.get("as_of", "")
+    krw_str = f"₩{krw:,.0f}" if krw else "—"
+    global_str = f"₩{usd * fx:,.0f}" if usd and fx else "—"
+    as_of_html = f"기준 {_esc(as_of)} KST · " if as_of else ""
     return (
         '<div class="tv-cell">'
-        '<div class="tv-cell-label">BTC 펀딩비율·미결제약정</div>'
-        f'<div class="sentiment-row"><span>펀딩비율(8h)</span><b>{rate_str}</b></div>'
-        f'<div class="sentiment-row"><span>미결제약정</span><b>{oi_str}</b></div>'
-        '<div class="sentiment-src">Binance 무기한 선물</div>'
+        '<div class="tv-cell-label">BTC 김치 프리미엄</div>'
+        f'<div class="kimchi-val">{premium:+.2f}%</div>'
+        f'<div class="sentiment-row"><span>{_esc(venue)}</span><b>{krw_str}</b></div>'
+        f'<div class="sentiment-row"><span>해외 환산가</span><b>{global_str}</b></div>'
+        f'<div class="sentiment-src">{as_of_html}참고용 근사치(환율은 ECB 기준)</div>'
         '</div>'
     )
 
@@ -575,7 +649,7 @@ def render_crypto_dashboard(fear_greed: dict | None = None, crypto_sentiment: di
     Seriously! 같은 매수·매도 레이블)는 이 사이트의 무권유 원칙과
     정면으로 충돌해서 의도적으로 제외했다 — 대신 매수/매도 해석이
     섞이지 않는 수치형 지표(시가총액, 도미넌스, 공포·탐욕 지수,
-    펀딩비율/미결제약정)만 담았다. fear_greed·crypto_sentiment는
+    김치 프리미엄)만 담았다. fear_greed·crypto_sentiment는
     가장 최근 세션 아카이브의 값을 재사용한다(별도 API 호출 없음).
     """
     fg_html = render_fear_greed(fear_greed) if fear_greed else ""
@@ -833,6 +907,13 @@ a{color:inherit}
   font-size:14px;padding:5px 0;border-top:1px solid var(--rule)}
 .sentiment-row:first-of-type{border-top:none}
 .sentiment-row b{font-size:15px}
+.macro-grid{margin:0 0 28px}
+.macro-cell{padding-bottom:10px}
+.macro-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:2px 0 4px}
+.macro-val{font-size:22px;font-weight:700}
+.macro-delta{font-size:12.5px;color:var(--ink-soft)}
+.macro-badge{font-size:11px;color:var(--ink-soft);margin-top:4px}
+.kimchi-val{font-size:26px;font-weight:700;margin:2px 0 8px}
 .sentiment-src{font-size:11px;color:var(--ink-soft);margin-top:4px}
 
 .log-row{display:grid;grid-template-columns:minmax(150px,auto) 1fr auto;gap:20px;align-items:center;
@@ -886,6 +967,7 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
   <div class="section-title" style="margin-top:18px">실시간 마켓 위젯<span class="tv-badge">Powered by TradingView</span></div>
   {tv_mini_grid_html}
   {krw_forex_grid_html}
+  {macro_cards_html}
   <div class="section-title">가상자산 실시간 현황</div>
   {tv_crypto_dashboard_html}
   <div class="section-title">세션별 아카이브</div>
@@ -904,11 +986,14 @@ def build_site():
     # 가장 최근 세션 아카이브(archive_files[0], 최신순 정렬)의 값을
     # 재사용한다.
     latest_fear_greed = None
-    # BTC 펀딩비율/미결제약정(Binance)도 공포·탐욕 지수와 동일하게
+    # BTC 김치 프리미엄도 공포·탐욕 지수와 동일하게
     # 가장 최근 세션 아카이브의 값을 재사용한다(별도 API 호출 없음).
     latest_crypto_sentiment = None
+    # 금리·달러 카드도 가장 최근 정상 세션 아카이브의 market_snapshot을 쓴다.
+    latest_market_snapshot = None
 
     log_rows = []
+    skipped_empty = 0
     for path in archive_files:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
@@ -920,6 +1005,12 @@ def build_site():
         session_suffix = f" · {time_label}" if time_label else ""
 
         issues = data.get("issues", [])
+        # 요약 단계가 실패해 이슈가 0건인 아카이브(과거 API 키 오류 기간의
+        # 빈 JSON)는 목록·페이지에서 제외한다. JSON 파일 자체는 그대로
+        # 두므로 저장소에서 따로 지울 필요가 없다.
+        if not issues:
+            skipped_empty += 1
+            continue
 
         rapid_n = sum(1 for i in issues if i.get("trend_status") == "Accelerating")
         metarow = (
@@ -931,11 +1022,14 @@ def build_site():
 
         global_picture = data.get("global_picture", {})
         market_snapshot = data.get("market_snapshot", {})
+        if latest_market_snapshot is None and market_snapshot:
+            latest_market_snapshot = market_snapshot
         fear_greed = data.get("fear_greed")
         if latest_fear_greed is None and fear_greed:
             latest_fear_greed = fear_greed
         crypto_sentiment = data.get("crypto_sentiment")
-        if latest_crypto_sentiment is None and crypto_sentiment:
+        if (latest_crypto_sentiment is None and crypto_sentiment
+                and crypto_sentiment.get("kimchi_premium_pct") is not None):
             latest_crypto_sentiment = crypto_sentiment
         asset_pulse_html = render_asset_pulse(global_picture.get("asset_class_pulse", []), market_snapshot, fear_greed)
         global_picture_html = render_global_picture(global_picture)
@@ -975,12 +1069,14 @@ def build_site():
         rows="".join(log_rows),
         tv_mini_grid_html=render_tv_mini_grid(),
         krw_forex_grid_html=render_krw_forex_grid(),
+        macro_cards_html=render_macro_cards(latest_market_snapshot),
         tv_crypto_dashboard_html=render_crypto_dashboard(latest_fear_greed, latest_crypto_sentiment),
     )
     with open(f"{OUTPUT_DIR}/index.html", "w", encoding="utf-8") as f:
         f.write(index_html)
 
-    print(f"{len(archive_files)}개 페이지(세션 포함) 생성 완료 → {OUTPUT_DIR}/")
+    print(f"{len(archive_files) - skipped_empty}개 페이지(세션 포함) 생성 완료 → {OUTPUT_DIR}/ "
+          f"(이슈 0건 아카이브 {skipped_empty}개 제외)")
 
 
 if __name__ == "__main__":
