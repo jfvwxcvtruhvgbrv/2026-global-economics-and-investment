@@ -32,7 +32,9 @@ cluster_and_summarize.py의 2~3단계 프롬프트가 담당한다.
 # 한다.
 NEWS_FEEDS = {
     # North America — 거시/시장/통화정책
-    "Reuters Business & Finance": ("https://www.reutersagency.com/feed/?best-topics=business-finance&post_type=best", "North America"),
+    # Reuters 공개 RSS는 404로 막혀(2026-10 로그 확인) 일단 제외. 공식 대체
+    # 피드를 확인하면 아래 줄을 갱신해서 다시 켠다.
+    # "Reuters Business & Finance": ("https://www.reutersagency.com/feed/?best-topics=business-finance&post_type=best", "North America"),
     "CNBC Economy": ("https://www.cnbc.com/id/20910258/device/rss/rss.html", "North America"),
     "MarketWatch Top Stories": ("http://feeds.marketwatch.com/marketwatch/topstories/", "North America"),
     "Federal Reserve Press Releases": ("https://www.federalreserve.gov/feeds/press_all.xml", "North America"),
@@ -54,7 +56,10 @@ NEWS_FEEDS = {
     # Latin America
     "MercoPress": ("https://en.mercopress.com/rss/", "Latin America"),
     # Oceania
-    "NZ Herald": ("https://www.nzherald.co.nz/arc/outboundfeeds/rss/", "Oceania"),
+    # NZ Herald 기존 주소는 404(2026-10 로그)라 RNZ(뉴질랜드 공영방송)
+    # 경제 피드로 교체했다. 이 주소는 이 환경에서 접속 검증을 못 했으므로,
+    # 다음 실행 로그에 [WARN] RNZ ...가 보이면 다시 확인해야 한다.
+    "RNZ Business (New Zealand)": ("https://www.rnz.co.nz/rss/business.xml", "Oceania"),
 
     # ── Global / 자산군별 전문 피드 ──────────────────────────
     # 지역이 아니라 "자산군(주식/채권·금리/원자재/암호자산/외환)"
@@ -78,15 +83,19 @@ NEWS_FEEDS = {
 # 이용약관상 과도한 자동 수집은 제한될 수 있으므로 요청 간격을 두고,
 # 명확한 User-Agent를 지정해야 한다. 상업적 대량 이용 시 공식 API
 # (OAuth) 사용을 권장한다.
+# Reddit .json은 GitHub Actions 서버(미국 데이터센터 IP)에서 매번 403으로
+# 차단돼서(2026-10 로그) 수집이 되지 않았다. 우회하지 않고 비활성화했다.
+# 공식 API(OAuth) 계정을 쓰게 되면 아래 주석을 풀어 다시 켠다.
 COMMUNITY_SOURCES = {
-    "Reddit r/economics": "https://www.reddit.com/r/economics/top.json?limit=25&t=day",
-    "Reddit r/investing": "https://www.reddit.com/r/investing/top.json?limit=25&t=day",
-    "Reddit r/StockMarket": "https://www.reddit.com/r/StockMarket/top.json?limit=25&t=day",
-    "Reddit r/finance": "https://www.reddit.com/r/finance/top.json?limit=25&t=day",
+    # "Reddit r/economics": "https://www.reddit.com/r/economics/top.json?limit=25&t=day",
+    # "Reddit r/investing": "https://www.reddit.com/r/investing/top.json?limit=25&t=day",
+    # "Reddit r/StockMarket": "https://www.reddit.com/r/StockMarket/top.json?limit=25&t=day",
+    # "Reddit r/finance": "https://www.reddit.com/r/finance/top.json?limit=25&t=day",
 }
 
 REQUEST_USER_AGENT = "personal-archive-bot/0.1 (contact: your-email@example.com)"
 REQUEST_DELAY_SECONDS = 2  # 사이트별 과도한 요청 방지
+REQUEST_TIMEOUT_SECONDS = 20  # RSS 응답 대기 시간 (NHK처럼 느린 서버가 10초에 끊기던 문제 완화)
 
 # Claude API 모델 (클러스터링/다중관점 요약에 사용)
 CLAUDE_MODEL = "claude-sonnet-4-6"
