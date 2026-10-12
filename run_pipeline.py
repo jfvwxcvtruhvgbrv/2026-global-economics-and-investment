@@ -26,13 +26,20 @@ from generate_site import build_site
 
 
 def main():
+    # 키가 없으면 수집·시세 단계를 돌리기 전에 바로 실패시킨다. (과거에는
+    # 요약 단계가 401로 조용히 실패해도 워크플로우가 "성공"으로 끝나서
+    # 이슈 0건짜리 빈 아카이브가 며칠씩 쌓였다.)
+    if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
+        print("[ERROR] ANTHROPIC_API_KEY 가 비어 있습니다. GitHub Secrets 이름/값을 확인하세요.")
+        sys.exit(1)
+
     print("[1/4] 이번 세션의 경제/투자 뉴스·커뮤니티 수집 중...")
     items = fetch_today()
     print(f"    → {len(items)}개 아이템 수집")
 
     if not items:
-        print("    수집된 아이템이 없어 종료합니다 (소스 접근 실패 여부 확인 필요).")
-        sys.exit(0)
+        print("[ERROR] 수집된 아이템이 없어 종료합니다 (소스 접근 실패 여부 확인 필요).")
+        sys.exit(1)
 
     print("[2/4] 자산군별 실제 시세 데이터(주식지수/금리/원자재/암호자산/환율) 수집 중...")
     try:
@@ -49,10 +56,19 @@ def main():
 
     crypto_sentiment = fetch_crypto_sentiment()
     if crypto_sentiment:
-        print(f"    → BTC 펀딩비율: {crypto_sentiment['funding_rate_pct']}% / 미결제약정: {crypto_sentiment['open_interest_btc']} BTC")
+        print(f"    → 김치 프리미엄: {crypto_sentiment['kimchi_premium_pct']:+.2f}% ({crypto_sentiment['venue']} 기준)")
 
     print("[3/4] Claude로 3단계(Map→Chunk-Reduce→Final Funnel) 이슈 클러스터링 + 마켓 픽처 생성 중...")
     archive = build_daily_archive(items)
+
+    # 요약 결과가 비어 있으면(API 키/크레딧/모델 오류 등) 저장·배포하지
+    # 않고 실패로 끝낸다. 그래야 GitHub Actions가 실패로 표시되고 알림
+    # 메일이 가며, 직전의 정상 사이트도 빈 페이지로 덮어써지지 않는다.
+    if not archive.get("issues"):
+        print("[ERROR] 요약 결과 이슈가 0건입니다. 위의 [WARN] 로그(401/404/결제 등)를 확인하세요. "
+              "아카이브를 저장하지 않고 중단합니다.")
+        sys.exit(1)
+
     archive["market_snapshot"] = market_snapshot
     archive["fear_greed"] = fear_greed
     archive["crypto_sentiment"] = crypto_sentiment
