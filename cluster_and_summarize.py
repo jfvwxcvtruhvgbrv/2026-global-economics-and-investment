@@ -458,13 +458,18 @@ def _load_previous_headlines() -> list[str]:
     files = sorted(glob.glob("archive/*.json"))
     if not files:
         return []
-    try:
-        with open(files[-1], encoding="utf-8") as f:
-            prev = json.load(f)
-        return [issue.get("headline", "") for issue in prev.get("issues", [])]
-    except Exception as e:
-        print(f"[WARN] 이전 아카이브 로드 실패: {e}")
-        return []
+    # 이슈가 비어 있는 아카이브(요약 실패 기간의 잔여 파일)는 건너뛰고
+    # 이슈가 실제로 있는 가장 최근 파일의 헤드라인을 쓴다.
+    for path in reversed(files):
+        try:
+            with open(path, encoding="utf-8") as f:
+                prev = json.load(f)
+            headlines = [issue.get("headline", "") for issue in prev.get("issues", [])]
+            if headlines:
+                return headlines
+        except Exception as e:
+            print(f"[WARN] 이전 아카이브 로드 실패({path}): {e}")
+    return []
 
 
 def build_daily_archive(items: list[dict]) -> dict:
