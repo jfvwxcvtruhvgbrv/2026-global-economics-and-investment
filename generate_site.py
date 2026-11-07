@@ -953,13 +953,138 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
 </html>
 """
 
+DEFAULT_REPO = "jfvwxcvtruhvgbrv/2026-global-economics-and-investment"
+WORKFLOW_FILE = "daily.yml"
+DEFAULT_BRANCH = "main"
+
+UPDATE_BAR_CSS = """
+.upd-bar{margin:6px 0 22px;padding:14px 18px;background:var(--card);border:1px solid var(--rule);
+  display:flex;flex-wrap:wrap;align-items:center;gap:12px 18px}
+.upd-btn{font:inherit;font-size:16px;font-weight:700;padding:9px 20px;background:var(--ink);color:var(--card);
+  border:0;border-radius:4px;cursor:pointer}
+.upd-btn:disabled{opacity:.45;cursor:default}
+.upd-info{font-size:14.5px;color:var(--ink-soft);line-height:1.5}
+.upd-status{font-size:14.5px;font-weight:700}
+.upd-link{font-size:13px;color:var(--ink-soft)}
+.upd-token{flex-basis:100%;display:none;font-size:13.5px;color:var(--ink-soft);line-height:1.6;
+  border-top:1px solid var(--rule);padding-top:12px}
+.upd-token input{font:inherit;font-size:14px;width:min(420px,100%);padding:7px 10px;border:1px solid var(--rule);
+  background:#fff;margin:6px 8px 6px 0}
+.upd-token button{font:inherit;font-size:14px;padding:7px 14px;border:1px solid var(--ink);background:transparent;
+  cursor:pointer;margin-right:6px}
+.upd-token ol{margin:6px 0 4px 20px}
+"""
+
+UPDATE_BAR_HTML = """
+<div class="upd-bar" id="updBar">
+  <button class="upd-btn" id="updBtn" type="button">최신 뉴스 업데이트</button>
+  <div>
+    <div class="upd-info">마지막 업데이트: __LAST_UPDATED__ · 버튼을 누를 때만 새 뉴스를 수집·요약합니다 (약 3~5분 소요, API 비용 발생)</div>
+    <div class="upd-status" id="updStatus"></div>
+  </div>
+  <a class="upd-link" href="https://github.com/__REPO__/actions/workflows/__WORKFLOW__" target="_blank" rel="noopener">GitHub에서 직접 실행 ↗</a>
+  <div class="upd-token" id="updToken">
+    버튼을 쓰려면 이 브라우저에 GitHub 토큰을 한 번 저장해야 합니다 (토큰은 사이트 코드에 들어가지 않고, 이 브라우저에만 저장됩니다).
+    <ol>
+      <li><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">Fine-grained token 만들기</a> →
+          Repository access: <b>Only select repositories → __REPO_NAME__</b> 하나만 선택</li>
+      <li>Permissions → Repository permissions → <b>Actions: Read and write</b> (나머지는 그대로)</li>
+      <li>만료일은 90일 정도로 지정 → 생성된 토큰을 아래에 붙여넣기</li>
+    </ol>
+    <input type="password" id="updTokenInput" placeholder="github_pat_..." autocomplete="off">
+    <button type="button" id="updTokenSave">저장하고 실행</button>
+    <button type="button" id="updTokenCancel">취소</button>
+  </div>
+</div>
+<script>
+(function(){
+  var REPO="__REPO__", WF="__WORKFLOW__", REF="__REF__", KEY="gei_gh_token";
+  var API="https://api.github.com/repos/"+REPO+"/actions/workflows/"+WF;
+  var btn=document.getElementById("updBtn"), st=document.getElementById("updStatus"),
+      box=document.getElementById("updToken"), inp=document.getElementById("updTokenInput");
+  var timer=null, startedAfter=0;
+  function getTok(){try{return localStorage.getItem(KEY)||""}catch(e){return ""}}
+  function setTok(v){try{if(v)localStorage.setItem(KEY,v);else localStorage.removeItem(KEY)}catch(e){}}
+  function say(t,color){st.textContent=t;st.style.color=color||"";}
+  function hdr(){var h={"Accept":"application/vnd.github+json"},t=getTok();if(t)h["Authorization"]="Bearer "+t;return h;}
+  function latestRun(){
+    return fetch(API+"/runs?event=workflow_dispatch&per_page=1&_="+Date.now(),{headers:hdr()})
+      .then(function(r){if(!r.ok)throw new Error("runs "+r.status);return r.json()})
+      .then(function(j){return (j.workflow_runs&&j.workflow_runs[0])||null});
+  }
+  function watch(){
+    clearInterval(timer);
+    btn.disabled=true;
+    timer=setInterval(function(){
+      latestRun().then(function(run){
+        if(!run||Date.parse(run.created_at)<startedAfter-60000){say("실행 대기 중…");return;}
+        if(run.status!=="completed"){
+          say(run.status==="queued"?"대기열에 등록됨…":"뉴스 수집·요약 중… (보통 3~5분)");return;
+        }
+        clearInterval(timer);
+        if(run.conclusion==="success"){
+          say("완료! 새 뉴스를 불러옵니다…","#1a7f37");
+          setTimeout(function(){location.href=location.pathname+"?u="+Date.now();},4000);
+        }else{
+          say("실행이 실패했습니다("+run.conclusion+"). 'GitHub에서 직접 실행' 링크의 Actions 로그를 확인하세요.","#c0392b");
+          btn.disabled=false;
+        }
+      }).catch(function(){say("상태 확인 중 일시적 오류… 잠시 후 다시 시도합니다.");});
+    },10000);
+  }
+  function dispatch(){
+    var tok=getTok();
+    if(!tok){box.style.display="block";return;}
+    btn.disabled=true;say("실행 요청 중…");
+    latestRun().catch(function(){return null}).then(function(run){
+      if(run&&run.status!=="completed"){
+        startedAfter=Date.parse(run.created_at)+1;say("이미 진행 중인 업데이트가 있습니다.");watch();return;
+      }
+      startedAfter=Date.now();
+      return fetch(API+"/dispatches",{method:"POST",headers:Object.assign({"Content-Type":"application/json"},hdr()),
+        body:JSON.stringify({ref:REF})}).then(function(r){
+          if(r.status===204){say("실행 요청 완료. 시작을 기다리는 중…");watch();}
+          else if(r.status===401||r.status===403||r.status===404){
+            setTok("");say("토큰이 유효하지 않거나 권한(Actions: Read and write)이 없습니다. 다시 입력해 주세요.","#c0392b");
+            btn.disabled=false;box.style.display="block";
+          }else{say("요청 실패 (HTTP "+r.status+")","#c0392b");btn.disabled=false;}
+        });
+    }).catch(function(){say("네트워크 오류로 요청하지 못했습니다.","#c0392b");btn.disabled=false;});
+  }
+  btn.addEventListener("click",function(){
+    if(!getTok()){box.style.display="block";inp.focus();return;}
+    if(confirm("지금 뉴스를 새로 수집·요약할까요?\\nAnthropic API 비용이 발생합니다 (1회 실행)."))dispatch();
+  });
+  document.getElementById("updTokenSave").addEventListener("click",function(){
+    var v=inp.value.trim();if(!v)return;setTok(v);inp.value="";box.style.display="none";dispatch();
+  });
+  document.getElementById("updTokenCancel").addEventListener("click",function(){box.style.display="none";});
+  // 페이지를 열 때 이미 진행 중인 실행이 있으면 상태를 이어서 표시
+  latestRun().then(function(run){
+    if(run&&run.status!=="completed"){startedAfter=Date.parse(run.created_at)+1;say("업데이트가 진행 중입니다…");watch();}
+  }).catch(function(){});
+})();
+</script>
+"""
+
+
+def render_update_bar(last_updated: str) -> str:
+    repo = os.environ.get("GITHUB_REPOSITORY") or DEFAULT_REPO
+    return (UPDATE_BAR_HTML
+            .replace("__LAST_UPDATED__", _esc(last_updated or "정보 없음"))
+            .replace("__REPO_NAME__", repo.split("/")[-1])
+            .replace("__REPO__", repo)
+            .replace("__WORKFLOW__", WORKFLOW_FILE)
+            .replace("__REF__", DEFAULT_BRANCH))
+
+
 INDEX_TEMPLATE = """<!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Global Economic & Investment Intelligence — 아카이브</title>
-<style>{css}</style>
+<style>{css}{update_css}</style>
 </head>
 <body>
 <div class="wrap">
@@ -970,6 +1095,7 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
   {macro_cards_html}
   <div class="section-title">가상자산 실시간 현황</div>
   {tv_crypto_dashboard_html}
+  {update_bar_html}
   <div class="section-title">세션별 아카이브</div>
   <div style="margin:0 0 90px">{rows}</div>
 </div>
@@ -994,6 +1120,7 @@ def build_site():
 
     log_rows = []
     skipped_empty = 0
+    last_updated = ""
     for path in archive_files:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
@@ -1011,6 +1138,9 @@ def build_site():
         if not issues:
             skipped_empty += 1
             continue
+
+        if not last_updated:  # 최신순 정렬이므로 첫 정상 아카이브가 가장 최근
+            last_updated = f"{_pretty_date(date)}{session_suffix}"
 
         rapid_n = sum(1 for i in issues if i.get("trend_status") == "Accelerating")
         metarow = (
@@ -1066,6 +1196,8 @@ def build_site():
     # 세션별 과거 아카이브 페이지가 아니라 index.html에만 넣는다.
     index_html = INDEX_TEMPLATE.format(
         css=BASE_CSS,
+        update_css=UPDATE_BAR_CSS,
+        update_bar_html=render_update_bar(last_updated),
         rows="".join(log_rows),
         tv_mini_grid_html=render_tv_mini_grid(),
         krw_forex_grid_html=render_krw_forex_grid(),
