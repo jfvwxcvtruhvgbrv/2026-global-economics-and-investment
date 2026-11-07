@@ -1,10 +1,9 @@
 name: 경제·투자 인사이트 아카이브 생성 및 배포
 
 on:
-  schedule:
-    - cron: "13 21 * * *"   # 매일 UTC 21:13 = 한국시간 06:13 (아침 세션)
-    - cron: "13 9 * * *"    # 매일 UTC 09:13 = 한국시간 18:13 (저녁 세션)
-  workflow_dispatch:        # 수동 실행 버튼도 사용 가능
+  # 자동 실행(cron)은 비용 절감을 위해 제거했습니다.
+  # 사이트의 "뉴스 업데이트" 버튼 또는 GitHub Actions 탭의 "Run workflow"로만 실행됩니다.
+  workflow_dispatch:
 
 permissions:
   contents: write
